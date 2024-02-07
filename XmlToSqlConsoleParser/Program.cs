@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Xml;
 
 namespace XmlToSqlConsoleParser
@@ -62,16 +63,18 @@ namespace XmlToSqlConsoleParser
         {
             var orders = new List<Order>();
 
+            using var dbContext = new ApplicationContext();
+
             foreach (XmlElement orderXmlData in ordersXmlData)
             {
-                var order = GetOrder(orderXmlData);
+                var order = GetOrder(orderXmlData, dbContext);
                 orders.Add(order);
             }
 
             return orders;
         }
 
-        private static Order GetOrder(XmlElement orderXmlData)
+        private static Order GetOrder(XmlElement orderXmlData, ApplicationContext dbContext)
         {
             var order = new Order();
 
@@ -89,10 +92,10 @@ namespace XmlToSqlConsoleParser
                         SetOrderCost(order, node.InnerText);
                         break;
                     case "product":
-                        SetOrderItem(order, node);
+                        SetOrderItem(order, node, dbContext);
                         break;
                     case "user":
-                        SetOrderCustomer(order, node);
+                        SetOrderCustomer(order, node, dbContext);
                         break;
                     default:
                         throw new InvalidOperationException("Некорректное название тэга: " + node.Name);
@@ -116,15 +119,15 @@ namespace XmlToSqlConsoleParser
                 : throw new InvalidOperationException("Некорректное значение стоимости заказа: " + cost);
         }
 
-        private static void SetOrderItem(Order order, XmlNode productData)
+        private static void SetOrderItem(Order order, XmlNode productData, ApplicationContext dbContext)
         {
-            var orderItem = GetOrderItem(productData);
+            var orderItem = GetOrderItem(productData, dbContext);
             order.OrderItems.Add(orderItem);
         }
 
-        private static OrderItem GetOrderItem(XmlNode productData)
+        private static OrderItem GetOrderItem(XmlNode productData, ApplicationContext dbContext)
         {
-            var product = GetProduct(productData, out int count);
+            var product = GetProduct(productData, out int count, dbContext);
 
             return new OrderItem
             {
@@ -133,9 +136,9 @@ namespace XmlToSqlConsoleParser
             };
         }
 
-        private static Product GetProduct(XmlNode productXmlData, out int count)
+        private static Product GetProduct(XmlNode productXmlData, out int count, ApplicationContext dbContext)
         {
-            var product = FindOrCreateProduct(productXmlData);
+            var product = FindOrCreateProduct(productXmlData, dbContext);
             count = 0;
 
             foreach (XmlNode node in productXmlData.ChildNodes)
@@ -160,13 +163,13 @@ namespace XmlToSqlConsoleParser
             return product;
         }
 
-        private static Product FindOrCreateProduct(XmlNode productXmlData)
+        private static Product FindOrCreateProduct(XmlNode productXmlData, ApplicationContext dbContext)
         {
             var productNameData = productXmlData.SelectSingleNode("name") ??
                 throw new InvalidOperationException("Некорректный формат входных данных: отсутствует наименование продукта.");
 
-            using var dbContext = new ApplicationContext();
-            var product = dbContext.Products.FirstOrDefault(p => p.Name.Equals(productNameData.InnerText));
+            var product = dbContext.Products.FirstOrDefault(p => p.Name.Equals(productNameData.InnerText)) ??
+                dbContext.Products.Local.FirstOrDefault(p => p.Name.Equals(productNameData.InnerText));
 
             if (product is null)
             {
@@ -179,15 +182,15 @@ namespace XmlToSqlConsoleParser
 
         private static Product CreateProduct(string productName) => new() { Name = productName };
 
-        private static void SetOrderCustomer(Order order, XmlNode customerData)
+        private static void SetOrderCustomer(Order order, XmlNode customerData, ApplicationContext dbContext)
         {
-            var customer = GetCustomer(customerData);
+            var customer = GetCustomer(customerData, dbContext);
             order.Customer = customer;
         }
 
-        private static Customer GetCustomer(XmlNode customerXmlData)
+        private static Customer GetCustomer(XmlNode customerXmlData, ApplicationContext dbContext)
         {
-            var customer = FindOrCreateCustomer(customerXmlData);
+            var customer = FindOrCreateCustomer(customerXmlData, dbContext);
 
             foreach (XmlNode node in customerXmlData.ChildNodes)
             {
@@ -207,13 +210,13 @@ namespace XmlToSqlConsoleParser
             return customer;
         }
 
-        private static Customer FindOrCreateCustomer(XmlNode customerXmlData)
+        private static Customer FindOrCreateCustomer(XmlNode customerXmlData, ApplicationContext dbContext)
         {
             var customerNameData = customerXmlData.SelectSingleNode("fio") ??
                 throw new InvalidOperationException("Некорректный формат входных данных: отсутствует ФИО покупателя.");
 
-            using var dbContext = new ApplicationContext();
-            var customer = dbContext.Customers.FirstOrDefault(p => p.Name.Equals(customerNameData.InnerText));
+            var customer = dbContext.Customers.FirstOrDefault(p => p.Name.Equals(customerNameData.InnerText)) ??
+                dbContext.Customers.Local.FirstOrDefault(p => p.Name.Equals(customerNameData.InnerText));
 
             if (customer is null)
             {
